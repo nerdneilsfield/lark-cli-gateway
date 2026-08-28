@@ -1,0 +1,93 @@
+version: 2
+
+project_name: lark-cli-gateway
+
+builds:
+  - id: server
+    main: ./cmd/lark-gateway-server
+    binary: lark-gateway-server
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+  - id: cli
+    main: ./cmd/lark-gateway-cli
+    binary: lark-gateway-cli
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: server-archive
+    ids:
+      - server
+    name_template: "lark-gateway-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    wrap_in_directory: true
+  - id: cli-archive
+    ids:
+      - cli
+    name_template: "lark-gateway-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    wrap_in_directory: true
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  use: git
+  sort: asc
+  abbrev: -1
+  groups:
+    - title: Features
+      regexp: '^feat(?:\(.+\))?!?:.*'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^fix(?:\(.+\))?!?:.*'
+      order: 1
+    - title: Performance
+      regexp: '^perf(?:\(.+\))?!?:.*'
+      order: 2
+    - title: Other Changes
+      regexp: '^.*$'
+      order: 999
+
+release:
+  prerelease: auto
+  preflight:
+    fail_on_error: true
