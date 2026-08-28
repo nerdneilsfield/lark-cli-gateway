@@ -85,51 +85,77 @@ sudo systemctl enable --now lark-gateway-server
 
 macOS 可用 launchd 或直接 `nohup`；只要保证进程常驻即可。
 
-### 服务器通过 autossh 反代连接本地 server
+### 服务器经 SSH 隧道连接本地 server
 
 典型场景：`lark-cli` 的登录态在本地桌面（或某台内网机器）上，而云服务器上要发通知。
-服务器无法直连桌面端口，用 SSH 反向隧道把**服务器自身的 `127.0.0.1:19090`** 转发回
-桌面的网关：
+目标一致：让**服务器上的 `127.0.0.1:19090`** 经 SSH 隧道转发到**桌面的网关**。
+SSH 的 `-R`/`-L` 双向都能暴露端口，按**谁到谁可达**选一种：
 
-```mermaid
-flowchart LR
-    A[云服务器上的发送方] -->|POST 127.0.0.1:19090| B[autossh 反代<br>127.0.0.1:19090 -> 桌面:19090]
-    B -.SSH 加密.-> C[桌面 lark-gateway-server]
-```
+| 方案 | 发起方 | 形式 | 适用 |
+|---|---|---|---|
+| A | 桌面 → 服务器 | `-R` | 桌面在 NAT 后、服务器有公网 IP（最常见） |
+| B | 服务器 → 桌面 | `-L` | 桌面可被服务器访问（公网 IP / 端口转发 / 同一内网） |
 
-1. 在桌面启动网关：
+记忆法：`-R` 的监听端口绑在 **SSH 服务端**，转发目标在**客户端侧**解析；`-L` 反之
+（绑定在客户端，目标在服务端侧解析）。两种方案最终落点相同：服务器
+`127.0.0.1:19090` → 桌面 `127.0.0.1:19090`（网关）。
+
+#### 方案 A：桌面发起 `-R`（推荐，NAT 场景）
+
+1. 桌面启动网关：
 
    ```bash
    ./lark-gateway-server
    ```
 
-2. 在服务器上建立反向隧道（需先配置好公钥登录桌面）：
+2. 桌面的 SSH 公钥加入服务器 `~/.ssh/authorized_keys`。
+3. 桌面运行 autossh：
 
    ```bash
    autossh -M 0 -N -f -R 19090:127.0.0.1:19090 \
      -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
      -o ExitOnForwardFailure=yes \
+     <server-user>@<server-host>
+   ```
+
+   - 端口 `19090` 绑定在**服务器**（sshd），目标 `127.0.0.1:19090` 在**桌面**侧解析，即网关。
+   - `ExitOnForwardFailure=yes`：服务器侧 19090 被占用时立即失败退出，避免假存活。
+   - autossh 连接超时自动重连；桌面只需出站访问服务器 22，服务器无需开放任何入站端口。
+   - 验证：服务器上 `ss -lntp | grep 19090` 应看到 `127.0.0.1:19090`。
+
+4. 服务器上直接使用 `http://127.0.0.1:19090/send`（curl / python / cli 均可），流量经
+   SSH 加密回桌面由网关投递。
+
+#### 方案 B：服务器发起 `-L`（桌面可达时）
+
+1. 桌面启动网关（同方案 A 第 1 步）。
+2. 服务器本机的 SSH 公钥加入桌面 `~/.ssh/authorized_keys`。
+3. 服务器运行 autossh：
+
+   ```bash
+   autossh -M 0 -N -f -L 19090:127.0.0.1:19090 \
+     -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+     -o ExitOnForwardFailure=yes \
      <desktop-user>@<desktop-host>
    ```
 
-   - `-R 19090:127.0.0.1:19090`：把服务器上的 `127.0.0.1:19090` 转发到桌面 `127.0.0.1:19090`。
-   - `ExitOnForwardFailure=yes`：远端端口被占用或目标不通时立即失败退出，避免假存活。
-   - `autossh` 负责断线重连；服务器只需有到桌面的 SSH 通道（通常出站 22），无需开放任何客户端端口。
-   - 服务器上 `ss -lntp | grep 19090` 应看到 `127.0.0.1:19090`。
+   - 端口 `19090` 绑定在**服务器本机**（ssh 客户端侧），目标 `127.0.0.1:19090` 在
+     **桌面**侧解析，仍落在桌面的网关。
+   - 前提：桌面的 sshd 可被服务器访问（22 公网 / 端口转发 / 同一内网）。
+   - 验证同上：服务器上 `ss -lntp | grep 19090` 应看到 `127.0.0.1:19090`。
 
-3. 服务器上直接使用 `http://127.0.0.1:19090/send` 即可（curl / python / cli 均可），
-   流量经 SSH 加密回桌面由网关投递。
+#### 常驻隧道
 
-常驻隧道可放入 systemd：
+方案 A：autossh 放**桌面**（macOS 桌面用 launchd 或 tmux + nohup；Linux 桌面用 systemd）：
 
 ```ini
-# /etc/systemd/system/gateway-tunnel.service
+# /etc/systemd/system/gateway-tunnel.service  (跑在桌面)
 [Unit]
-Description=autossh reverse tunnel to lark-gateway-server
+Description=autossh reverse tunnel to server (gateway port 19090)
 After=network-online.target
 
 [Service]
-ExecStart=autossh -M 0 -N -R 19090:127.0.0.1:19090 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=no <desktop-user>@<desktop-host>
+ExecStart=autossh -M 0 -N -R 19090:127.0.0.1:19090 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes <server-user>@<server-host>
 Restart=always
 RestartSec=5
 
@@ -137,11 +163,14 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+方案 B：autossh 放**服务器**，unit 同上，仅把 `-R` 换成 `-L`、`<server-user>@<server-host>` 换成 `<desktop-user>@<desktop-host>`。
+
 ### 安全注意
 
 - 网关**没有认证**。默认绑 `127.0.0.1` 即安全边界所在；如需对外，务必用 SSH 隧道
   或反代控制访问，不要改成 `0.0.0.0` 裸奔。
-- 使用 `-R` 时，远端绑定地址受服务器 `GatewayPorts` 策略影响；确认只监听 `127.0.0.1`。
+- 绑定位置随方案不同：`-R` 的远端绑定受服务器 sshd `GatewayPorts` 策略影响，`-L` 的
+  绑定固定在客户端本机；两种都应确认只监听 `127.0.0.1`。
 
 ## Client 用法
 
