@@ -20,7 +20,8 @@
 # Go workspace file
 go.work
 
-main
+/lark-gateway-server
+/lark-gateway-cli
 config.json
 
 docs/superpowers
