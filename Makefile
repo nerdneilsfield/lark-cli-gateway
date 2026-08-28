@@ -5,8 +5,9 @@ CMD := cmd/lark-gateway-server cmd/lark-gateway-cli
 GOFILES := cmd internal
 
 BINARIES := lark-gateway-server lark-gateway-cli
+GORELEASER ?= goreleaser
 
-.PHONY: all build fmt fmt-check lint vet test check clean
+.PHONY: all build fmt fmt-check lint vet test check release-check release-snapshot clean
 
 all: build
 
@@ -33,7 +34,14 @@ vet:
 test:
 	go test ./...
 
-check: fmt-check lint vet test
+check: fmt-check lint vet test release-check
 
 clean:
 	rm -f $(BINARIES)
+	rm -rf dist
+
+release-check:
+	$(GORELEASER) check
+
+release-snapshot:
+	$(GORELEASER) release --snapshot --clean
