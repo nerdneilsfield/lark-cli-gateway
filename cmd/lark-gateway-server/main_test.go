@@ -11,12 +11,12 @@ import (
 	"github.com/nerdneilsfield/lark-cli-gateway/internal/protocol"
 )
 
-func validMessage() protocol.Message {
-	return protocol.Message{ChatID: "oc_test", As: "bot", Type: "markdown", Content: "hello"}
+func validMessage() job {
+	return job{Message: protocol.Message{ChatID: "oc_test", As: "bot", Type: "markdown", Content: "hello"}}
 }
 
 func TestHandleSendValidQueues(t *testing.T) {
-	queue := make(chan protocol.Message, 1)
+	queue := make(chan job, 1)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /send", handleSend(queue))
 
@@ -58,7 +58,7 @@ func TestHandleSendRejectsInvalid(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			queue := make(chan protocol.Message, 1)
+			queue := make(chan job, 1)
 			mux := http.NewServeMux()
 			mux.HandleFunc("POST /send", handleSend(queue))
 
@@ -77,7 +77,7 @@ func TestHandleSendRejectsInvalid(t *testing.T) {
 }
 
 func TestHandleSendQueueFullReturns503(t *testing.T) {
-	queue := make(chan protocol.Message, 1)
+	queue := make(chan job, 1)
 	queue <- validMessage()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /send", handleSend(queue))
@@ -100,7 +100,7 @@ func TestHandleSendQueueFullReturns503(t *testing.T) {
 
 func TestSendWithRetryZeroRetriesCallsOnce(t *testing.T) {
 	calls := 0
-	sendWithRetry(validMessage(), 0, 0, func(protocol.Message) error {
+	sendWithRetry(validMessage(), 0, 0, func(job) error {
 		calls++
 		return nil
 	})
@@ -111,7 +111,7 @@ func TestSendWithRetryZeroRetriesCallsOnce(t *testing.T) {
 
 func TestSendWithRetryStopsAfterSuccess(t *testing.T) {
 	calls := 0
-	sendWithRetry(validMessage(), 2, 0, func(protocol.Message) error {
+	sendWithRetry(validMessage(), 2, 0, func(job) error {
 		calls++
 		if calls < 3 {
 			return errors.New("boom")
@@ -125,7 +125,7 @@ func TestSendWithRetryStopsAfterSuccess(t *testing.T) {
 
 func TestSendWithRetryPermanentFailureCallsThreeTimes(t *testing.T) {
 	calls := 0
-	sendWithRetry(validMessage(), 2, 0, func(protocol.Message) error {
+	sendWithRetry(validMessage(), 2, 0, func(job) error {
 		calls++
 		return errors.New("boom")
 	})
@@ -135,13 +135,13 @@ func TestSendWithRetryPermanentFailureCallsThreeTimes(t *testing.T) {
 }
 
 func TestWorkerProcessesInFIFOOrder(t *testing.T) {
-	queue := make(chan protocol.Message, 2)
-	queue <- protocol.Message{ChatID: "first", As: "bot", Type: "text", Content: "1"}
-	queue <- protocol.Message{ChatID: "second", As: "bot", Type: "text", Content: "2"}
+	queue := make(chan job, 2)
+	queue <- job{Message: protocol.Message{ChatID: "first", As: "bot", Type: "text", Content: "1"}}
+	queue <- job{Message: protocol.Message{ChatID: "second", As: "bot", Type: "text", Content: "2"}}
 	close(queue)
 
 	var calls []string
-	worker(queue, 0, 0, 2, func(m protocol.Message) error {
+	worker(queue, 0, 0, 2, func(m job) error {
 		calls = append(calls, m.ChatID)
 		if m.ChatID == "first" {
 			return errors.New("boom")

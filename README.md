@@ -1,13 +1,13 @@
 # lark-cli-gateway
 
-一个只监听本机的 HTTP 网关：接收 JSON 通知，经有界 FIFO 队列限速转发给
+一个只监听本机的 HTTP 网关：接收 JSON 通知和文件上传，经有界 FIFO 队列限速转发给
 `lark-cli`（通过 `lark-cli im +messages-send` 发送），
-带固定间隔排队、失败重试与队列满则快速拒绝。发送方只需 `POST /send`，无需关心飞书
+带固定间隔排队、失败重试与队列满则快速拒绝。发送方使用 `POST /send` 或 `POST /send-file`，无需关心飞书
 认证、命令参数与限流细节。
 
 ```mermaid
 flowchart LR
-    A[curl / python / lark-gateway-cli] -->|POST /send| B[lark-gateway-server]
+    A[curl / python / lark-gateway-cli] -->|POST /send 或 /send-file| B[lark-gateway-server]
     B -->|FIFO queue + retry + interval| C[lark-cli im +messages-send]
     C --> D[飞书/Lark]
 ```
@@ -59,6 +59,7 @@ curl -s -X POST http://127.0.0.1:19090/send \
 | `-interval` | `1s` | 两条消息之间的固定间隔 |
 | `-retries` | `2` | 单条消息的额外重试次数（2 => 最多发送 3 次） |
 | `-retry-interval` | `2s` | 每次重试前的等待 |
+| `-max-file-mb` | `20` | 单文件上限，单位 MiB，范围 1–1024；不是飞书平台上限 |
 | `-lark-cli` | `lark-cli` | `lark-cli` 可执行文件路径 |
 
 ### 常驻（systemd）
@@ -174,7 +175,7 @@ WantedBy=multi-user.target
 
 ## Client 用法
 
-协议就是单个 HTTP JSON 接口，三种方式互通。server 返回 `200 {"ok":true}` 表示
+文本使用 HTTP JSON 接口，文件使用 multipart 接口。server 返回 `200 {"ok":true}` 表示
 **已入队**；底层发送失败会在重试 `-retries` 次后丢弃并写 server 日志，不代表队列返回
 时已成功投递。
 
@@ -243,6 +244,41 @@ except urllib.error.HTTPError as e:
 | `200` | `{"ok":true}`，已入队 |
 | `400` | body 非法：非 JSON / 缺字段 / 值非法 / 不止一个 JSON 值 |
 | `503` | 队列满，稍后重试 |
+
+### 文件上传（curl）
+
+文件来自调用方机器，无需与网关共享目录。将 `oc_xxx` 替换为目标会话 ID，
+将 `./report.pdf` 替换为本地文件：
+
+```bash
+curl -F 'chat_id=oc_xxx' -F 'as=bot' -F 'file=@./report.pdf' \
+  http://127.0.0.1:19090/send-file
+```
+
+`POST /send-file` 接受 `multipart/form-data`，必须包含以下字段，各出现一次：
+
+| 字段 | 内容 |
+|---|---|
+| `chat_id` | 非空会话 ID，最多 4096 字节 |
+| `as` | `user` 或 `bot` |
+| `file` | 一个非空文件；文件名不能含路径分隔符、冒号或控制字符，也不能是 `.` 或 `..` |
+
+默认单文件最大 20 MiB，整个请求最多额外占用 64 KiB。未知字段、重复字段、
+非法文件名或不完整上传返回 400，超限返回 413，临时存储失败返回 500。
+最多同时接收 2 个上传；上传名额或队列已满时返回 503。
+成功仍返回 `200 {"ok":true}`，表示文件已暂存并入队，不代表飞书已收到。
+
+文件上传需要 `lark-cli` 的 `im:resource` 权限及对应身份的发消息权限；
+网关的大小限制不替代飞书平台限制。上传请求读取超时和每次 CLI 发送超时均为 5 分钟。
+文件与文本共用 FIFO，顺序按入队时间计算；文件发送和重试会阻塞后续通知。
+每个文件任务在重试时复用同一个幂等键，CLI 文档给出的去重窗口为 1 小时。
+客户端若未收到响应，任务可能已经入队；重新提交可能产生重复消息。
+
+暂存文件位于运行用户缓存目录的 `lark-cli-gateway/<监听地址摘要>/` 下。
+成功、重试耗尽或接收失败后删除文件；同一监听地址启动时清除遗留文件，不恢复任务。
+修改监听地址后，旧地址目录需在旧实例停止后手动清理。
+每个实例最多暂存 `queue-size + 3` 份文件，默认文件数据上界约为 2060 MiB，
+不含文件系统开销。提高单文件上限前，应确认缓存目录有足够空间。
 
 ## 开发
 
