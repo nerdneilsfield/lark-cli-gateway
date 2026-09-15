@@ -54,7 +54,7 @@ above establish file behavior without sending a message to a real chat.
 Commit one useful server endpoint with curl documentation immediately after checks.
 
 ### T2: Client file upload
-Status: pending. Depends on T1.
+Status: done. Depends on T1.
 Files: cmd/lark-gateway-cli/main.go and tests; optional new upload.go; README.md.
 Add mutually exclusive --file; stream multipart from a regular local file with
 bounded memory and close/join the producer on HTTP errors. Keep host/as/env rules.
@@ -71,3 +71,10 @@ T1 evidence: `make check` and `make build` passed. Tests cover exact binary byte
 Unicode filename, retry success/exhaustion cleanup, malformed/duplicate uploads,
 size/full/busy rejection, stale cleanup, cwd/argv, deadline and existing FIFO.
 README language check found only legitimate technical-format candidates.
+
+T2 evidence: `make check`, `make build`, and `go test -race ./...` passed.
+Compiled CLI posted a client-local binary file named `报告 1.pdf` to the compiled
+server; a fake CLI observed exact bytes, name, user identity, relative path and
+idempotency key. The job directory was absent after completion. Test processes
+were stopped. Live Lark delivery remains untested; no destination was supplied.
+All implementation tasks are complete. No push is authorized.

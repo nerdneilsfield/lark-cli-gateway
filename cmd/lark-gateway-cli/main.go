@@ -1,5 +1,5 @@
 // Command lark-gateway-cli sends messages to a lark-gateway-server over
-// POST /send using the shared protocol.Message wire contract.
+// POST /send (JSON) or POST /send-file (multipart).
 package main
 
 import (
@@ -44,6 +44,7 @@ func run(args []string, getenv func(string) string, client *http.Client, stdout 
 	asFlag := sf.String("as", "bot", "send as user or bot")
 	textFlag := sf.String("text", "", "plain text content")
 	markdownFlag := sf.String("markdown", "", "markdown content")
+	fileFlag := sf.String("file", "", "local file to upload (exclusive with --text and --markdown)")
 	if err := sf.Parse(fs.Args()[1:]); err != nil {
 		return err
 	}
@@ -86,8 +87,14 @@ func run(args []string, getenv func(string) string, client *http.Client, stdout 
 		return errors.New("as must be user or bot")
 	}
 
-	if (*textFlag == "") == (*markdownFlag == "") {
-		return errors.New("exactly one of --text or --markdown is required")
+	selected := 0
+	for _, value := range []string{*textFlag, *markdownFlag, *fileFlag} {
+		if value != "" {
+			selected++
+		}
+	}
+	if selected != 1 {
+		return errors.New("exactly one of --text, --markdown or --file is required")
 	}
 
 	msg := protocol.Message{ChatID: chatID, As: *asFlag}
@@ -99,17 +106,23 @@ func run(args []string, getenv func(string) string, client *http.Client, stdout 
 		msg.Content = *markdownFlag
 	}
 
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("encode message: %w", err)
-	}
-
 	endpoint := url.URL{
 		Scheme: "http",
 		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
 		Path:   "/send",
 	}
-	resp, err := client.Post(endpoint.String(), "application/json", bytes.NewReader(body))
+	var resp *http.Response
+	if *fileFlag != "" {
+		endpoint.Path = "/send-file"
+		resp, err = postFile(client, endpoint.String(), chatID, *asFlag, *fileFlag)
+	} else {
+		var body []byte
+		body, err = json.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("encode message: %w", err)
+		}
+		resp, err = client.Post(endpoint.String(), "application/json", bytes.NewReader(body))
+	}
 	if err != nil {
 		return fmt.Errorf("post to gateway: %w", err)
 	}
@@ -131,7 +144,7 @@ func run(args []string, getenv func(string) string, client *http.Client, stdout 
 }
 
 func main() {
-	err := run(os.Args[1:], os.Getenv, &http.Client{Timeout: 5 * time.Second}, os.Stdout)
+	err := run(os.Args[1:], os.Getenv, &http.Client{Timeout: 5 * time.Minute}, os.Stdout)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return

@@ -184,6 +184,7 @@ WantedBy=multi-user.target
 ```bash
 lark-gateway-cli send-msg --chat-id oc_xxx --text "hello"
 lark-gateway-cli send-msg --chat-id oc_xxx --as user --markdown '**bold** and `code`'
+lark-gateway-cli send-msg --chat-id oc_xxx --file ./report.pdf
 ```
 
 | Flag | 默认值 | 说明 |
@@ -192,9 +193,10 @@ lark-gateway-cli send-msg --chat-id oc_xxx --as user --markdown '**bold** and `c
 | `--port` | `$LARK_GATEWAY_PORT` 或 `19090` | 网关端口 |
 | `--chat-id` | `$LARK_CHAT_ID` | 必填，飞书会话 ID |
 | `--as` | `bot` | `user` 或 `bot` |
-| `--text` / `--markdown` | — | 二选一，消息内容 |
+| `--text` / `--markdown` / `--file` | — | 三选一：文本、Markdown 或客户端本地文件路径 |
 
-成功打印 `{"ok":true}`；失败打印错误到 stderr 并以非零码退出。客户端 HTTP 超时 5 秒。
+成功打印 `{"ok":true}`；失败打印错误到 stderr 并以非零码退出。客户端 HTTP 超时 5 分钟。`--file` 接受相对或绝对路径，只上传非空普通文件；
+不会把本地路径当作网关路径或 URL 转发。上传期间不要修改源文件。
 
 ### curl
 

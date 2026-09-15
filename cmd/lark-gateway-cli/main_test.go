@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -138,13 +140,13 @@ func TestRunRejectsInvalidInputBeforeRequest(t *testing.T) {
 			"both text and markdown",
 			nil,
 			[]string{"send-msg", "--chat-id", "c", "--text", "a", "--markdown", "b"},
-			"exactly one of --text or --markdown is required",
+			"exactly one of --text, --markdown or --file is required",
 		},
 		{
 			"neither text nor markdown",
 			nil,
 			[]string{"send-msg", "--chat-id", "c"},
-			"exactly one of --text or --markdown is required",
+			"exactly one of --text, --markdown or --file is required",
 		},
 		{
 			"invalid as",
@@ -224,5 +226,78 @@ func TestRunGatewayErrorLeavesStdoutEmpty(t *testing.T) {
 	}
 	if out != "" {
 		t.Fatalf("stdout = %q, want empty", out)
+	}
+}
+
+func TestRunUploadsClientFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "报告 1.pdf")
+	content := "binary\x00payload"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/send-file" || r.Method != "POST" {
+			t.Error("wrong endpoint")
+		}
+		if err := r.ParseMultipartForm(1024); err != nil {
+			t.Error(err)
+			http.Error(w, "bad", 400)
+			return
+		}
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
+		if r.FormValue("chat_id") != "oc_file" || r.FormValue("as") != "user" {
+			t.Error("wrong metadata")
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		data, err := io.ReadAll(file)
+		_ = file.Close()
+		if err != nil || string(data) != content || header.Filename != "报告 1.pdf" {
+			t.Errorf("file %q: %q %v", header.Filename, data, err)
+		}
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+	host, port := serverHostPort(t, srv)
+	out, err := runCLI(t, nil, "--host", host, "--port", port, "send-msg", "--chat-id", "oc_file", "--as", "user", "--file", path)
+	if err != nil || out != `{"ok":true}` {
+		t.Fatalf("upload: %q %v", out, err)
+	}
+}
+
+func TestRunRejectsInvalidFile(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{dir, empty, filepath.Join(dir, "missing")} {
+		out, err := runCLI(t, nil, "send-msg", "--chat-id", "oc_test", "--file", path)
+		if err == nil || out != "" {
+			t.Fatalf("invalid file: %q %v", out, err)
+		}
+	}
+	_, err := runCLI(t, nil, "send-msg", "--chat-id", "oc_test", "--file", empty, "--text", "hi")
+	if err == nil || !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("mixed flags: %v", err)
+	}
+}
+
+func TestRunUploadEarlyRejection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.bin")
+	if err := os.WriteFile(path, make([]byte, 2<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "uploads busy", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	host, port := serverHostPort(t, srv)
+	out, err := runCLI(t, nil, "--host", host, "--port", port, "send-msg", "--chat-id", "oc_test", "--file", path)
+	if err == nil || !strings.Contains(err.Error(), "503") || out != "" {
+		t.Fatalf("early rejection: %q %v", out, err)
 	}
 }
