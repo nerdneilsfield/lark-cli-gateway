@@ -91,3 +91,66 @@ release:
   prerelease: auto
   preflight:
     fail_on_error: true
+
+# Publish to the nerdneilsfield/homebrew-apps tap and Scoop bucket.
+homebrew_casks:
+  - name: lark-gateway-server
+    ids:
+      - server-archive
+    homepage: https://github.com/nerdneilsfield/lark-cli-gateway
+    description: Local HTTP gateway that queues and forwards messages to lark-cli
+    binaries:
+      - lark-gateway-server
+    directory: Casks
+    repository:
+      owner: nerdneilsfield
+      name: homebrew-apps
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/lark-gateway-server"]
+          end
+  - name: lark-gateway-cli
+    ids:
+      - cli-archive
+    homepage: https://github.com/nerdneilsfield/lark-cli-gateway
+    description: Command-line client for lark-gateway-server
+    binaries:
+      - lark-gateway-cli
+    directory: Casks
+    repository:
+      owner: nerdneilsfield
+      name: homebrew-apps
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/lark-gateway-cli"]
+          end
+
+scoops:
+  - name: lark-gateway-server
+    ids:
+      - server-archive
+    homepage: https://github.com/nerdneilsfield/lark-cli-gateway
+    description: Local HTTP gateway that queues and forwards messages to lark-cli
+    license: MIT
+    directory: bucket
+    repository:
+      owner: nerdneilsfield
+      name: homebrew-apps
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+  - name: lark-gateway-cli
+    ids:
+      - cli-archive
+    homepage: https://github.com/nerdneilsfield/lark-cli-gateway
+    description: Command-line client for lark-gateway-server
+    license: MIT
+    directory: bucket
+    repository:
+      owner: nerdneilsfield
+      name: homebrew-apps
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"

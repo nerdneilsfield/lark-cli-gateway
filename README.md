@@ -23,6 +23,21 @@ flowchart LR
 - 运行 **server** 的机器必须已安装并登录 `lark-cli`（即 `lark-cli im` 可直接发消息）。
 - 运行 **client** 的机器只需能访问 server 的地址。
 
+## 通过 Homebrew / Scoop 安装
+
+```bash
+# macOS / Linux
+brew install --cask nerdneilsfield/apps/lark-gateway-server
+brew install --cask nerdneilsfield/apps/lark-gateway-cli
+```
+
+```powershell
+# Windows
+scoop bucket add nerdneilsfield https://github.com/nerdneilsfield/homebrew-apps
+scoop install nerdneilsfield/lark-gateway-server
+scoop install nerdneilsfield/lark-gateway-cli
+```
+
 ## 安装
 
 源码构建（产生 `lark-gateway-server` / `lark-gateway-cli` 两个二进制到仓库根目录）：
