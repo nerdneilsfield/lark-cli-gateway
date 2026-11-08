@@ -137,6 +137,7 @@ scoops:
       - server-archive
     homepage: https://github.com/nerdneilsfield/lark-cli-gateway
     description: Local HTTP gateway that queues and forwards messages to lark-cli
+    license: MIT
     directory: bucket
     repository:
       owner: nerdneilsfield
@@ -147,6 +148,7 @@ scoops:
       - cli-archive
     homepage: https://github.com/nerdneilsfield/lark-cli-gateway
     description: Command-line client for lark-gateway-server
+    license: MIT
     directory: bucket
     repository:
       owner: nerdneilsfield
